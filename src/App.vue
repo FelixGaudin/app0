@@ -39,6 +39,7 @@
     </div>
     <div class="cols">
       <button v-on:click="resolve">Resolve</button>
+      <button v-on:click="simulate">Simulate</button>
       <select name="map" id="map" v-on:change="chooseMap">
         <option value="clear">Vide</option>
         <option value="map1">Map 1</option>
@@ -50,6 +51,8 @@
         <option value="map7">Obstacle 4</option>
       </select>
     </div>
+    <textarea id="src-input" auto-grow>
+	</textarea>
   </div>
 </template>
 
@@ -65,6 +68,7 @@ export default {
   },
   data() {
     return {
+      timeout_ms : 500,
       board : [],
       potterPos : undefined,
       evilPos : undefined,
@@ -308,6 +312,101 @@ export default {
       // destroy_dark_force()
       // END OF THE CODE
     // },
+    async simulate() {
+      // define a bunch of stuff locally for the call to 'eval' later on
+      // we need to shut the linter up temporarily though
+      
+      /* eslint-disable no-unused-vars */
+
+      let sleep = this.sleep
+      let timeout_ms = this.timeout_ms
+
+      let move = this.move
+      let turn_left = this.turn_left
+      let turn_right = this.turn_right
+
+      let can_move = this.can_move
+      let is_on_target = this.is_on_target
+      let get_direction = this.get_direction
+      let get_x = this.get_x
+      let get_y = this.get_y
+      let get_target_x = this.get_target_x
+      let get_target_y = this.get_target_y
+      let destroy_dark_force = this.destroy_dark_force
+
+      /* eslint-enable no-unused-vars */
+
+      // translate python source to javashit
+
+      let python_source = document.getElementById("src-input").value
+      python_source = python_source.replace(/ {4}/g, '\t')
+
+      let lines = python_source.split("\n")
+      let js_src = ""
+
+      let prev_tabcount = 0;
+
+      function translate_line(line) {
+        let tabcount = 0
+
+        for (let chr of line) {
+          if (chr == '\t') tabcount++
+          else break
+        }
+
+        line = line.substring(tabcount, line.length)
+
+        if (line == "") {
+          return
+        }
+
+        if (tabcount < prev_tabcount) {
+          js_src += '}'.repeat(prev_tabcount - tabcount)
+        }
+
+        prev_tabcount = tabcount
+
+        const VALID_STATEMENTS = [ "while", "if" ]
+        let is_statement = false
+
+        for (let statement of VALID_STATEMENTS) {
+          if (line.search(statement) >= 0) {
+            is_statement = true
+
+            const DICTIONARY = { "elif": "else if", "and": "&&", "or": "||", "not": '!', "EAST": '"east"', "WEST": '"west"', "NORTH": '"north"', "SOUTH": '"south"' }
+            let expression = line.replace(':', "").split(' ').map(token => DICTIONARY[token] || token)
+
+            expression.splice(0, 1)
+            expression = expression.join(' ')
+        
+            js_src += statement + '(' + expression + "){"
+          }
+        }
+
+        if (!is_statement) {
+          js_src += line
+          
+          if (js_src.length && js_src[js_src.length - 1]) {
+            js_src += ';'
+          }
+        }
+      }
+
+      for (let line of lines) {
+        translate_line(line)
+      }
+
+      js_src += '}'.repeat(prev_tabcount) // in case we don't end the python source by a newline...
+
+      js_src = js_src.replace("can_move()", "lmfao()")
+      js_src = js_src.replace("move()", "move();await sleep(timeout_ms)")
+      js_src = js_src.replace("turn_left()", "turn_left();await sleep(timeout_ms)")
+      js_src = js_src.replace("turn_right()", "turn_right();await sleep(timeout_ms)")
+      js_src = js_src.replace("lmfao()", "can_move()")
+
+      console.log(js_src)
+      eval("(async() => {" + js_src + "})()") // a bit hacky but eh
+    },
     async resolve() {
       if (this.potterPos == undefined || this.evilPos == undefined) return
       // do a BFS
@@ -318,7 +417,6 @@ export default {
         x : this.get_x(),
         y : this.get_y()
       })
-
       while (queue.length > 0) {
         let c = queue.shift()
         if (c.x == this.get_target_x() && c.y == this.get_target_y()) break; // evil found
